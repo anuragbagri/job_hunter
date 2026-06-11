@@ -1,0 +1,85 @@
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+model UserProfile {
+  id                String        @id @default(cuid())
+  fullName          String
+  email             String        @unique
+  phone             String?
+  location          String?
+  linkedinUrl       String?
+  githubUrl         String?
+  portfolioUrl      String?
+  targetRoles       String[]
+  targetLocations   String[]
+  skills            String[]
+  experienceSummary String?
+  resumePath        String?
+  createdAt         DateTime      @default(now())
+  updatedAt         DateTime      @updatedAt
+  applications      Application[]
+}
+
+model JobListing {
+  id             String        @id @default(cuid())
+  platform       String
+  externalId     String?
+  url            String        @unique
+  title          String
+  company        String
+  location       String?
+  description    String?
+  applyUrl       String?
+  applyEmail     String?
+  postedAt       DateTime?
+  discoveredAt   DateTime      @default(now())
+  rawData        Json?
+  createdAt      DateTime      @default(now())
+  updatedAt      DateTime      @updatedAt
+  applications   Application[]
+
+  @@unique([platform, externalId])
+  @@index([platform])
+  @@index([discoveredAt])
+}
+
+model Application {
+  id              String       @id @default(cuid())
+  jobListingId    String
+  userProfileId   String?
+  runLogId        String?
+  strategy        String
+  matchScore      Float
+  tailoringLevel  String
+  coverLetterText String?
+  resumeSummary   String?
+  status          String
+  errorMessage    String?
+  appliedAt       DateTime     @default(now())
+  createdAt       DateTime     @default(now())
+  jobListing      JobListing   @relation(fields: [jobListingId], references: [id], onDelete: Cascade)
+  userProfile     UserProfile? @relation(fields: [userProfileId], references: [id])
+  runLog          RunLog?      @relation(fields: [runLogId], references: [id])
+
+  @@index([status])
+  @@index([appliedAt])
+}
+
+model RunLog {
+  id             String        @id @default(cuid())
+  status         String
+  startedAt      DateTime      @default(now())
+  finishedAt     DateTime?
+  jobsDiscovered Int           @default(0)
+  jobsMatched    Int           @default(0)
+  jobsApplied    Int           @default(0)
+  jobsFailed     Int           @default(0)
+  errorMessage   String?
+  applications   Application[]
+}
