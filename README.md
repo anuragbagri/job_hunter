@@ -25,8 +25,11 @@ npm run run
 
 ## Navigation
 
+- [Tech Used](#tech-used)
 - [Prototype Control Panel](#prototype-control-panel)
 - [How The Pipeline Works](#how-the-pipeline-works)
+- [Scraping And Browser Automation](#scraping-and-browser-automation)
+- [Data Model](#data-model)
 - [Setup](#setup)
 - [Required Runtime Data](#required-runtime-data)
 - [Run Modes](#run-modes)
@@ -35,6 +38,33 @@ npm run run
 - [Project Map](#project-map)
 - [Safety Checklist](#safety-checklist)
 - [Troubleshooting](#troubleshooting)
+
+## Tech Used
+
+| Area | Tech | Where | Why it is used |
+| --- | --- | --- | --- |
+| Runtime | Node.js 20+ with ES modules | `package.json`, `src/**/*.js` | Runs the whole prototype as modern JavaScript modules. |
+| Pipeline orchestration | LangGraph | `src/pipeline/graph.js`, `src/pipeline/state.js` | Wires agents into a stateful workflow: profile -> scrape -> dedupe -> match -> documents -> apply -> track -> notify. |
+| LLM integration | LangChain | `src/llm/client.js`, `src/agents/matcherAgent.js`, `src/agents/documentAgent.js` | Calls Gemini or OpenAI models and requests structured output for matching and document generation. |
+| LLM providers | Gemini and OpenAI | `.env`, `src/llm/client.js` | Lets you switch providers through `LLM_PROVIDER`. |
+| Database ORM | Prisma 7 | `prisma/schema.prisma`, `src/db/client.js` | Defines the database schema and persists profiles, listings, applications, and run logs. |
+| Database | PostgreSQL or Neon PostgreSQL | `DATABASE_URL`, `src/db/client.js` | Stores all durable pipeline data. The current client uses the Neon Prisma adapter. |
+| Browser automation | Playwright | `src/browser/browserManager.js`, scrapers, application agents | Opens real Chromium pages for dynamic job boards, login flows, form filling, and easy-apply flows. |
+| Browser compatibility layer | `playwright-extra` + `puppeteer-extra-plugin-stealth` | `src/browser/browserManager.js` | Runs Playwright with the stealth plugin to reduce common automation fingerprints. |
+| Scheduling | `node-cron` | `src/scheduler/cron.js` | Runs the pipeline on `CRON_SCHEDULE`. |
+| Email | Nodemailer | `src/agents/notificationAgent.js`, `src/agents/applicationAgents/emailApply.js`, `src/pipeline/runner.js` | Sends run summaries, failure alerts, and email applications. |
+| Resume parsing | `pdf-parse` | `src/agents/profileAgent.js` | Extracts text from the candidate resume PDF before LLM matching. |
+| Config validation | Zod | `src/config/index.js` | Validates `.env`, coerces booleans/numbers, and blocks missing required credentials. |
+| CLI output | `cli-table3` | `src/agents/notificationAgent.js` | Prints application summaries in the terminal. |
+
+## Main Architecture Choices
+
+- The project is agent-based. Each stage is a small module under `src/agents/`.
+- The workflow is centralized in `src/pipeline/graph.js`, so you can replace one stage without rewriting the full runner.
+- The database is the source of truth for profiles, listings, applications, and run history.
+- LLM usage is isolated behind `src/llm/client.js`, so model/provider switching is config-driven.
+- Browser state is saved per platform in `sessions/`, which lets logged-in platforms reuse cookies/local storage between runs.
+- Auto-apply is behind explicit gates because this is a prototype and real submissions need human review.
 
 ## Prototype Control Panel
 
@@ -99,6 +129,91 @@ Supported scraper slots:
 - Naukri
 
 Some platforms require credentials and saved browser sessions. Some are disabled by default because they need more review before real use.
+
+## Scraping And Browser Automation
+
+This prototype uses three scraping styles depending on the platform:
+
+| Platform | Current approach | File |
+| --- | --- | --- |
+| Remote OK | Public JSON endpoint with `fetch()` | `src/agents/scrapers/remoteOk.js` |
+| We Work Remotely | RSS first, Playwright HTML fallback | `src/agents/scrapers/weWorkRemotely.js` |
+| Remote.co | Playwright DOM extraction | `src/agents/scrapers/remoteCo.js` |
+| Himalayas | Playwright DOM extraction | `src/agents/scrapers/himalayas.js` |
+| Mercor | Login-capable Playwright flow | `src/agents/scrapers/mercor.js` |
+| LinkedIn | Login-capable Playwright flow with saved session | `src/agents/scrapers/linkedin.js` |
+| Indeed | Optional login Playwright flow with saved session | `src/agents/scrapers/indeed.js` |
+| Naukri | Login-capable Playwright flow with saved session | `src/agents/scrapers/naukri.js` |
+
+### How scraping works
+
+1. `jobHunterAgent` reads platform flags from `.env`.
+2. `routeScrapers()` sends one graph branch per enabled platform.
+3. Each scraper returns `rawListings`.
+4. `dedupAgent` normalizes records, removes repeated URLs, checks existing database rows, and persists new `JobListing` records.
+5. Later stages only work on new deduped listings.
+
+The common listing shape is:
+
+```js
+{
+  platform: "remoteOk",
+  externalId: "123",
+  url: "https://example.com/job/123",
+  title: "Software Engineer",
+  company: "Example Co",
+  location: "Remote",
+  description: "...",
+  applyUrl: "https://example.com/apply/123",
+  applyEmail: "jobs@example.com",
+  postedAt: new Date()
+}
+```
+
+### Playwright details
+
+Browser setup lives in `src/browser/browserManager.js`.
+
+It currently uses:
+
+- `playwright-extra` Chromium
+- `puppeteer-extra-plugin-stealth`
+- persistent storage state per platform: `sessions/<platform>.json`
+- a desktop Chrome user agent
+- a fixed `1366x900` viewport
+- `HEADLESS` and `SLOW_MO_MS` from `.env`
+
+The scraper files use Playwright when the site needs rendered DOM, login, scrolling, or form interaction. For simpler sources, the code prefers direct API/RSS access because it is faster and less brittle.
+
+### About bypassing and anti-bot friction
+
+In this prototype, "bypass" means reducing normal automation friction while still using a real browser session:
+
+- the stealth plugin adjusts common browser automation fingerprints;
+- saved sessions reuse legitimate cookies/local storage after login;
+- some scrapers add small waits and scrolls before extracting DOM data;
+- authenticated platforms use configured credentials and then save the session.
+
+This project does not solve CAPTCHAs, break paywalls, override access controls, or force access when a platform blocks automation. If a platform presents a challenge, consent screen, MFA, or policy restriction, handle that manually and decide whether that platform should stay enabled.
+
+## Data Model
+
+Prisma schema lives in `prisma/schema.prisma`.
+
+| Model | Purpose |
+| --- | --- |
+| `UserProfile` | Candidate identity, links, target roles, skills, and resume path. |
+| `JobListing` | Normalized jobs discovered by scrapers. URLs are unique. |
+| `Application` | One application attempt or manual-pending item for a listing. |
+| `RunLog` | Per-run status and counters for discovered, matched, applied, and failed jobs. |
+
+The generated Prisma client is written to:
+
+```text
+src/generated/prisma
+```
+
+Database connection setup lives in `src/db/client.js`.
 
 ## Setup
 
