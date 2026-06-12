@@ -18,13 +18,19 @@ const numberFromEnv = z.preprocess((value) => {
 const configSchema = z
   .object({
     DATABASE_URL: z.string().url(),
-    OPENAI_API_KEY: z.string().min(1),
+    LLM_PROVIDER: z.enum(["openai", "gemini"]).default("openai"),
+    OPENAI_API_KEY: z.string().optional().default(""),
+    OPENAI_MODEL: z.string().min(1).default("gpt-4o"),
+    GEMINI_API_KEY: z.string().optional().default(""),
+    GEMINI_MODEL: z.string().min(1).default("gemini-2.5-flash"),
     CRON_SCHEDULE: z.string().min(1).default("0 9 * * *"),
     MATCH_THRESHOLD: numberFromEnv.default(70),
+    MAX_LISTINGS_PER_RUN: numberFromEnv.default(5),
     SESSION_DIR: z.string().min(1).default("./sessions"),
     RESUME_PATH: z.string().min(1).default("./data/resume.pdf"),
     HEADLESS: booleanFromEnv.default(true),
     SLOW_MO_MS: numberFromEnv.default(0),
+    AUTO_APPLY_ENABLED: booleanFromEnv.default(false),
 
     EMAIL_HOST: z.string().min(1),
     EMAIL_PORT: numberFromEnv.default(587),
@@ -55,6 +61,22 @@ const configSchema = z
     NAUKRI_PASSWORD: z.string().optional().default("")
   })
   .superRefine((env, ctx) => {
+    if (env.LLM_PROVIDER === "openai" && !env.OPENAI_API_KEY) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["OPENAI_API_KEY"],
+        message: "OPENAI_API_KEY is required when LLM_PROVIDER=openai"
+      });
+    }
+
+    if (env.LLM_PROVIDER === "gemini" && !env.GEMINI_API_KEY) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["GEMINI_API_KEY"],
+        message: "GEMINI_API_KEY is required when LLM_PROVIDER=gemini"
+      });
+    }
+
     const guardedCredentials = [
       ["MERCOR_ENABLED", "MERCOR_EMAIL", "MERCOR_PASSWORD"],
       ["LINKEDIN_ENABLED", "LINKEDIN_EMAIL", "LINKEDIN_PASSWORD"],

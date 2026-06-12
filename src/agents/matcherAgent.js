@@ -1,6 +1,6 @@
-import { ChatOpenAI } from "@langchain/openai";
 import { z } from "zod";
 import { config } from "../config/index.js";
+import { createChatModel } from "../llm/client.js";
 
 const matchSchema = z.object({
   score: z.number().min(0).max(100),
@@ -9,17 +9,13 @@ const matchSchema = z.object({
   reasoning: z.string()
 });
 
-const model = new ChatOpenAI({
-  apiKey: config.OPENAI_API_KEY,
-  model: "gpt-4o",
-  temperature: 0
-}).withStructuredOutput(matchSchema);
+const model = createChatModel({ temperature: 0 }).withStructuredOutput(matchSchema);
 
 const STRONG_MATCH_THRESHOLD = 85;
 const MAX_MODEL_ATTEMPTS = 3;
 
 export async function matcherAgent(state) {
-  const listings = state.dedupedListings ?? [];
+  const listings = (state.dedupedListings ?? []).slice(0, Math.max(0, config.MAX_LISTINGS_PER_RUN));
   const scoredListings = [];
   let jobsSkipped = 0;
 

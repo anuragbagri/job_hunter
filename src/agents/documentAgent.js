@@ -1,17 +1,12 @@
-import { ChatOpenAI } from "@langchain/openai";
 import { z } from "zod";
-import { config } from "../config/index.js";
+import { createChatModel } from "../llm/client.js";
 
 const documentSchema = z.object({
   coverLetter: z.string().optional(),
   resumeSummary: z.string().optional()
 });
 
-const model = new ChatOpenAI({
-  apiKey: config.OPENAI_API_KEY,
-  model: "gpt-4o",
-  temperature: 0.4
-}).withStructuredOutput(documentSchema);
+const model = createChatModel({ temperature: 0.4 }).withStructuredOutput(documentSchema);
 
 const MAX_MODEL_ATTEMPTS = 3;
 

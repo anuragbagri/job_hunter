@@ -69,6 +69,10 @@ function routeApplications(state) {
 }
 
 function applyPhaseGates(listing, linkedinAutoApplyCount) {
+  if (!config.AUTO_APPLY_ENABLED && isSubmittingStrategy(listing.strategy)) {
+    return manualDownloadListing(listing, "auto_apply_disabled");
+  }
+
   if (!isLinkedInListing(listing)) {
     return listing;
   }

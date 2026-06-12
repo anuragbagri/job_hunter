@@ -1,11 +1,7 @@
-import { browserManager } from "../../browser/browserManager.js";
-
 const platform = "remoteOk";
 
 export async function scrape(state) {
   try {
-    await browserManager.getContext(platform);
-
     const response = await fetch("https://remoteok.com/remote-jobs.json", {
       headers: {
         Accept: "application/json",

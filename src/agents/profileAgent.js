@@ -1,5 +1,5 @@
 import fs from "node:fs/promises";
-import pdfParse from "pdf-parse";
+import pdfParse from "pdf-parse/lib/pdf-parse.js";
 import { config } from "../config/index.js";
 import { prisma } from "../db/client.js";
 

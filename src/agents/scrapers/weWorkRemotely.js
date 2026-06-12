@@ -5,8 +5,6 @@ const rssUrl = "https://weworkremotely.com/categories/remote-programming-jobs.rs
 
 export async function scrape(state) {
   try {
-    await browserManager.getContext(platform);
-
     const response = await fetch(rssUrl, {
       headers: { "User-Agent": "job-hunter/0.1" }
     });
